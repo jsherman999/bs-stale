@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; connect-src https:; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light dark">
+  <title>Stale Follows</title>
+  <meta name="description" content="Find the accounts you follow on Bluesky that have gone inactive, and unfollow them.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap topbar-inner">
+      <div class="brand">
+        <span class="brand-name">Stale Follows</span>
+        <span class="brand-sub">for Bluesky</span>
+      </div>
+      <div class="topbar-actions">
+        <span id="whoami" class="whoami" hidden></span>
+        <button id="signout" class="btn-link" type="button" hidden>Sign out</button>
+        <button id="help-open" class="btn" type="button" aria-haspopup="dialog">Help</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="signin" class="signin">
+      <h1>Find the accounts you follow that have gone quiet.</h1>
+      <p class="lede">See when every account you follow was last active on Bluesky, sorted from stalest to most recent, and unfollow the ones that have left.</p>
+
+      <form id="signin-form" class="form" novalidate>
+        <label class="field">
+          <span class="field-label">Handle</span>
+          <input id="handle" name="handle" type="text" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="you.bsky.social" required>
+        </label>
+        <label class="field">
+          <span class="field-label">App password <span class="muted">· optional, needed to unfollow</span></span>
+          <input id="password" name="password" type="password" autocomplete="off" spellcheck="false" placeholder="xxxx-xxxx-xxxx-xxxx">
+        </label>
+        <p id="signin-error" class="form-error" role="alert" hidden></p>
+        <div class="form-actions">
+          <button id="signin-submit" class="btn btn-primary" type="submit">Analyze follows</button>
+          <button class="btn-link" type="button" data-help="help-password">How do I get an app password?</button>
+        </div>
+        <p class="fineprint">
+          Your app password is not sent to or stored on GitHub Pages. It stays in this browser tab and is sent only to Bluesky to sign you in.
+          <button class="btn-link" type="button" data-help="help-privacy">Details</button>
+        </p>
+      </form>
+    </section>
+
+    <section id="results" class="results" hidden>
+      <div id="progress" class="progress" hidden>
+        <div class="progress-row">
+          <span id="progress-text" class="progress-text">Loading…</span>
+          <button id="stop" class="btn-link" type="button">Stop</button>
+        </div>
+        <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+      </div>
+
+      <div class="summary">
+        <div class="summary-main">
+          <p id="summary-text" class="summary-text"></p>
+          <button id="select-suggested" class="btn btn-primary summary-action" type="button" hidden>Select all stale</button>
+        </div>
+        <div class="controls">
+          <label class="control">
+            <span>Stale after</span>
+            <select id="threshold">
+              <option value="91">3 months</option>
+              <option value="182">6 months</option>
+              <option value="365" selected>1 year</option>
+              <option value="730">2 years</option>
+            </select>
+          </label>
+          <label class="control">
+            <span>Measured by</span>
+            <select id="metric">
+              <option value="active" selected>Any activity</option>
+              <option value="post">Posts only</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <figure class="card chart-card">
+        <figcaption class="card-head">
+          <span id="chart-title" class="card-title">Time since last activity</span>
+          <span class="legend" aria-hidden="true">
+            <span class="legend-item"><span class="key key-stale"></span><span id="legend-stale">Stale</span></span>
+            <span class="legend-item"><span class="key key-other"></span><span id="legend-other">Active</span></span>
+          </span>
+        </figcaption>
+        <div id="chart" class="chart"></div>
+      </figure>
+
+      <div class="card table-card">
+        <div class="toolbar">
+          <div id="tabs" class="tabs" role="group" aria-label="Filter accounts">
+            <button type="button" data-filter="all" aria-pressed="true">All <span class="count"></span></button>
+            <button type="button" data-filter="stale" aria-pressed="false">Stale <span class="count"></span></button>
+            <button type="button" data-filter="gone" aria-pressed="false">Gone <span class="count"></span></button>
+            <button type="button" data-filter="active" aria-pressed="false">Active <span class="count"></span></button>
+            <button type="button" data-filter="unfollowed" aria-pressed="false" hidden>Unfollowed <span class="count"></span></button>
+          </div>
+          <input id="search" class="search" type="search" placeholder="Filter by name or handle" aria-label="Filter by name or handle" spellcheck="false">
+          <div class="toolbar-right">
+            <span id="selection" class="selection muted"></span>
+            <button id="export" class="btn" type="button" title="Download the rows currently shown">Export CSV</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table id="table" class="table">
+            <thead>
+              <tr>
+                <th class="col-check"><input id="check-all" type="checkbox" aria-label="Select all shown"></th>
+                <th data-sort="name" class="col-account"><button type="button">Account</button></th>
+                <th data-sort="last" class="num"><button type="button">Last active</button></th>
+                <th data-sort="post" class="num col-post"><button type="button">Last post</button></th>
+                <th data-sort="posts" class="num col-opt"><button type="button">Posts</button></th>
+                <th data-sort="followers" class="num col-opt"><button type="button">Followers</button></th>
+                <th data-sort="followed" class="num col-opt"><button type="button">Followed</button></th>
+                <th data-sort="status" class="col-status"><button type="button">Status</button></th>
+              </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+        <p id="table-empty" class="table-empty muted" hidden>No accounts match.</p>
+        <div id="more" class="more" hidden><button id="more-btn" class="btn" type="button">Show more</button></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="selbar" class="selbar" hidden>
+    <div class="wrap selbar-inner">
+      <span id="selbar-text" class="selbar-text"></span>
+      <button id="selbar-clear" class="btn-link" type="button">Clear</button>
+      <button id="unfollow" class="btn btn-danger-solid" type="button">Unfollow</button>
+    </div>
+  </div>
+
+  <footer class="wrap footer muted">
+    Runs entirely in your browser. Not affiliated with Bluesky.
+    <a href="https://github.com/jsherman999/bs-stale" target="_blank" rel="noopener noreferrer">Source</a>
+  </footer>
+
+  <dialog id="help" class="dialog dialog-wide" aria-labelledby="help-title">
+    <div class="dialog-head">
+      <h2 id="help-title">Help</h2>
+      <button class="btn-close" type="button" data-close aria-label="Close">×</button>
+    </div>
+    <div class="dialog-body prose">
+      <section id="help-password">
+        <h3>How to get a Bluesky app password</h3>
+        <p>An app password lets a tool sign in to your account with limited access. It cannot change your password or email or delete your account, and you can revoke it at any time. Never enter your main password into a third-party tool.</p>
+        <ol>
+          <li>Open Bluesky at <a href="https://bsky.app" target="_blank" rel="noopener noreferrer">bsky.app</a> or in the mobile app, and sign in.</li>
+          <li>Go to <b>Settings</b> → <b>Privacy and security</b> → <b>App passwords</b>. On the web you can go straight there: <a href="https://bsky.app/settings/app-passwords" target="_blank" rel="noopener noreferrer">bsky.app/settings/app-passwords</a>.</li>
+          <li>Select <b>Add App Password</b>.</li>
+          <li>Enter a name you will recognize later, such as <i>Stale Follows</i>. Leave <b>Allow access to your direct messages</b> unchecked. This tool doesn’t need it.</li>
+          <li>Select <b>Next</b>. Bluesky shows a password in the form <code>xxxx-xxxx-xxxx-xxxx</code>. Copy it now, because it is shown only once.</li>
+          <li>Paste it into the <b>App password</b> field here along with your handle, then select <b>Analyze follows</b>.</li>
+        </ol>
+        <p>When you’re done, go back to <b>Settings</b> → <b>Privacy and security</b> → <b>App passwords</b> and delete it to revoke access.</p>
+      </section>
+
+      <section id="help-privacy">
+        <h3>Where your app password goes</h3>
+        <ul>
+          <li><b>Not to GitHub.</b> This site is a set of static files served by GitHub Pages. There is no server behind it, so your app password is never sent to or stored on GitHub Pages.</li>
+          <li><b>Only in your browser.</b> The password is used once to sign in and is then cleared from the form. The session Bluesky returns is kept in this tab’s memory only, and is never saved to cookies or local storage. Closing or reloading the tab discards it.</li>
+          <li><b>Sent only to Bluesky.</b> Your browser sends the password directly to your Bluesky account server (bsky.social, or your own PDS if you self-host). <b>Sign out</b> also ends the session on Bluesky.</li>
+          <li><b>App passwords only.</b> The form rejects anything that isn’t in app-password format, so your main password can’t be sent by mistake.</li>
+        </ul>
+        <p>Public profile and activity data is read from Bluesky’s public API and each account’s own server, without your password. You can review the full <a href="https://github.com/jsherman999/bs-stale" target="_blank" rel="noopener noreferrer">source code</a>.</p>
+      </section>
+
+      <section id="help-data">
+        <h3>How activity is measured</h3>
+        <p>Bluesky doesn’t publish when someone last logged in, so this tool uses the most recent public activity instead.</p>
+        <ul>
+          <li><b>Last post</b>: the account’s newest post, reply or repost.</li>
+          <li><b>Last active</b>: the newest change of any kind to the account’s data, including posts, likes, reposts, follows, blocks and profile edits. This catches people who read and like but rarely post. It is looked up for accounts that haven’t posted in the last 30 days; for everyone else it equals their last post.</li>
+          <li><b>Gone</b>: follows that point at deleted, deactivated or suspended accounts. They still count toward your following total.</li>
+        </ul>
+        <p>Someone who only reads, and never likes, reposts or follows, will look inactive. Set <b>Measured by</b> to <b>Posts only</b> to judge by posting alone.</p>
+      </section>
+
+      <section id="help-unfollow">
+        <h3>Unfollowing</h3>
+        <p>Sign in with an app password, then choose <b>Select all stale &amp; gone</b> under the summary. That selects every account past your threshold plus any deleted or deactivated ones. Uncheck anyone you want to keep, then choose <b>Unfollow</b> in the bar at the bottom of the screen and confirm. You can also tick accounts one by one.</p>
+        <p>Unfollowing deletes your follow records, which is the same as selecting Unfollow in the Bluesky app. It can’t be undone from here, so use <b>Export CSV</b> first if you might want the list later.</p>
+      </section>
+    </div>
+  </dialog>
+
+  <dialog id="confirm" class="dialog" aria-labelledby="confirm-title">
+    <div class="dialog-head">
+      <h2 id="confirm-title">Unfollow accounts?</h2>
+      <button class="btn-close" type="button" data-close aria-label="Close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p id="confirm-text" class="muted"></p>
+      <ul id="confirm-list" class="confirm-list"></ul>
+      <p id="confirm-error" class="form-error" role="alert" hidden></p>
+    </div>
+    <div class="dialog-foot">
+      <button class="btn" type="button" data-close>Cancel</button>
+      <button id="confirm-go" class="btn btn-danger-solid" type="button">Unfollow</button>
+    </div>
+  </dialog>
+</body>
+</html>
